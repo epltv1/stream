@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Streams - Stream Manager</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    body { font-family: sans-serif; background: #f4f6f9; padding: 20px; }
+    .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-width: 600px; margin: auto; }
+    ul { list-style: none; padding: 0; }
+    li { background: #f0f8ff; padding: 15px; margin: 10px 0; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; }
+    button { background: #ff3333; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; }
+    .viewers { font-size: 14px; color: #666; }
+    .nav { text-align: center; margin-bottom: 20px; }
+    .nav a { margin: 0 10px; color: #0066ff; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="nav">
+    <a href="/dashboard">Dashboard</a>
+    <a href="/streams">Streams</a>
+    <a href="/logout">Logout</a>
+  </div>
+  <div class="card">
+    <h1>Ongoing Streams</h1>
+    <ul id="streamList"></ul>
+  </div>
+
+  <script>
+    const socket = io();
+    async function loadStreams() {
+      const res = await fetch('/api/streams');
+      if (res.status === 401) return window.location.href = '/';
+      const streams = await res.json();
+      const list = document.getElementById('streamList');
+      list.innerHTML = '';
+      streams.forEach(stream => {
+        const li = document.createElement('li');
+        li.innerHTML = `
+          <div>
+            <strong>${stream.title}</strong>
+            <span class="viewers" id="viewers-${stream.id}">0 viewers</span>
+          </div>
+          <button onclick="stopStream('${stream.id}')">Stop</button>
+        `;
+        list.appendChild(li);
+
+        // Join for real-time viewers (admin view)
+        socket.emit('join-stream', stream.id);
+        socket.on('viewer-count', count => {
+          document.getElementById(`viewers-${stream.id}`).textContent = `${count} viewers`;
+        });
+      });
+    }
+
+    async function stopStream(id) {
+      if (!confirm('Stop this stream?')) return;
+      const res = await fetch(`/api/streams/${id}`, { method: 'DELETE' });
+      if (res.ok) loadStreams();
+      else alert('Error stopping stream');
+    }
+
+    loadStreams();
+  </script>
+</body>
+</html>
