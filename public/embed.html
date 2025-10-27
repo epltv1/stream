@@ -2,60 +2,90 @@
 <html>
 <head>
   <title>Stream Player</title>
-  <link rel="stylesheet" href="https://vjs.zencdn.net/8.10.0/video-js.css">
-  <script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
-  <script src="https://unpkg.com/@videojs/http-streaming@3.10.0/dist/videojs-http-streaming.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@clappr/player@latest/dist/clappr.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@clappr/clappr-hlsjs-playback@latest/dist/clappr-hlsjs-playback.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/ewwink/clappr-quality-selector-plugin@latest/quality-selector.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/clappr-pip@latest/dist/clappr-pip.min.js"></script>
   <script src="/socket.io/socket.io.js"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
-    body { background: #000; }
-    .player { position: relative; width: 100%; height: 100vh; }
-    .video-js { width: 100%; height: 100%; object-fit: contain; }
-    .live { position: absolute; top: 10px; left: 10px; background: #e11; color: white; padding: 4px 8px; border-radius: 4px; font: bold 12px sans-serif; z-index: 10; }
-    .viewers { position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.7); color: white; padding: 4px 8px; border-radius: 4px; font: 12px sans-serif; z-index: 10; }
-    .hd-badge { position: absolute; top: 10px; left: 60px; background: #e11; color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px; z-index: 10; display: none; }
-    .vjs-control-bar { background: rgba(0,0,0,0.6); }
-    .vjs-quality-selector .vjs-menu-button::before { content: '\f013'; font-family: 'Font Awesome 6 Free'; font-weight: 900; }
-    @media (max-width: 768px) { .player { height: 50vh; } }
-    @media (min-width: 1200px) { .player { height: 80vh; } }
+    body { background: #000; overflow: hidden; }
+    #player { width: 100%; height: 100vh; }
+    .live { position: absolute; top: 10px; left: 10px; background: #e11; color: white; padding: 4px 8px; border-radius: 4px; font: bold 12px sans-serif; z-index: 1000; }
+    .hd-badge { position: absolute; top: 10px; left: 60px; background: #e11; color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px; z-index: 1000; display: none; }
+    .viewers { position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.7); color: white; padding: 4px 8px; border-radius: 4px; font: 12px sans-serif; z-index: 1000; }
+    @media (max-width: 768px) { #player { height: 50vh; } }
+    @media (min-width: 1200px) { #player { height: 80vh; } }
   </style>
 </head>
 <body>
-  <div class="player">
-    <video id="video" class="video-js vjs-default-skin" playsinline preload="auto"></video>
-    <div class="live">LIVE</div>
-    <div class="hd-badge">HD</div>
-    <div class="viewers" id="viewers">0 viewers</div>
-  </div>
+  <div id="player"></div>
+  <div class="live">LIVE</div>
+  <div class="hd-badge">HD</div>
+  <div class="viewers" id="viewers">0 viewers</div>
+
   <script>
-    const streamId = window.location.pathname.split('/').pop().replace('.php', '');
+    const fullPath = window.location.pathname;
+    const streamId = fullPath.match(/embed\/([a-z0-9]+)\.php/)[1]; // Improved ID extraction
+    console.log(`Parsed stream ID: ${streamId}`); // Debug
     const socket = io();
-    const player = videojs('video', {
-      controls: true,
-      controlBar: {
-        pictureInPictureToggle: true,
-        fullscreenToggle: true,
-        qualitySelector: true
-      }
-    });
 
     fetch(`/api/streams/${streamId}`).then(r => r.json()).then(stream => {
       document.title = stream.title + " - Live";
-      player.src({ src: `/proxy/${streamId}`, type: 'application/x-mpegURL' });
-      player.httpStreaming();
-      player.on('resolutionchange', () => {
-        const resolution = player.currentSource().resolution;
-        document.querySelector('.hd-badge').style.display = resolution && parseInt(resolution) >= 720 ? 'block' : 'none';
-      });
-      player.on('loadedmetadata', () => {
-        const sources = player.currentSources();
-        if (sources.length <= 1) {
-          const controlBar = document.querySelector('.vjs-quality-selector');
-          if (controlBar) controlBar.style.display = 'none';
+      const player = new Clappr.Player({
+        source: `/proxy/${streamId}`,
+        parentId: "#player",
+        autoPlay: true,
+        height: "100%",
+        width: "100%",
+        playback: { hlsjsConfig: { enableWorker: true } },
+        plugins: {
+          core: [ClapprHLSJSPlayback, QualitySelector, ClapprPip.PipPlugin],
+          container: [ClapprPip.PipButton]
+        },
+        qualitySelectorConfig: {
+          title: 'Quality',
+          labels: { 0: 'Auto' },
+          labelCallback: function(playbackLevel, customLabel) {
+            if (playbackLevel.level && playbackLevel.level.height >= 720) {
+              document.querySelector('.hd-badge').style.display = 'block';
+            }
+            return playbackLevel.level ? playbackLevel.level.height + 'p' : 'Auto';
+          }
+        },
+        events: {
+          onReady: () => {
+            // Fullscreen button (built-in, but force toggle)
+            const fsButton = player.core.mediaControl.getButton('fullscreen');
+            if (fsButton) fsButton.on('tap', () => player.core.mediaControl.toggleFullscreen());
+          },
+          onPlay: () => {
+            // Auto PiP if supported (manual via button)
+            if (ClapprPip.PipPlugin.isPictureInPictureSupported()) {
+              setTimeout(() => ClapprPip.PipPlugin.togglePictureInPicture(player), 2000); // Optional auto after 2s
+            }
+          }
         }
       });
-    }).catch(() => document.body.innerHTML = '<h1 style="color:white;text-align:center;">Stream not found or inactive</h1>');
+
+      // Quality logic: Hide selector if single quality
+      player.on(Clappr.Events.PLAYER_READY, () => {
+        const levels = player.core.getCurrentPlayback().getLevels();
+        if (levels.length <= 1) {
+          const qsButton = document.querySelector('.quality-selector-button');
+          if (qsButton) qsButton.style.display = 'none';
+        }
+      });
+
+      // PiP manual toggle (if needed beyond button)
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'p' || e.key === 'P') ClapprPip.PipPlugin.togglePictureInPicture(player);
+      });
+    }).catch(err => {
+      console.error('Stream fetch error:', err);
+      document.body.innerHTML = '<h1 style="color:white;text-align:center;">Stream not found or inactive</h1>';
+    });
 
     socket.emit('join-stream', streamId);
     socket.on('viewer-count', c => {
