@@ -4,6 +4,7 @@ const session = require('express-session');
 const { Server } = require('socket.io');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
+const { v4: uuidv4 } = require('uuid');
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
@@ -19,19 +20,19 @@ app.use(session({
 const db = new sqlite3.Database('streams.db');
 db.serialize(() => {
   db.run(`CREATE TABLE IF NOT EXISTS streams (id TEXT PRIMARY KEY, title TEXT, m3u8 TEXT, active INTEGER DEFAULT 1)`);
-  db.run(`CREATE TABLE IF NOT EXISTS viewers (stream_id TEXT, socket_id TEXT)`);
+  db.run(`CREATE TABLE IF NOT EXISTS viewers (stream_id TEXT, socket_id TEXT, UNIQUE(stream_id, socket_id))`);
 });
 
 app.use(express.json());
 app.use(express.static('public'));
 
-// Middleware: Auth
+// Auth Middleware
 function isAuthenticated(req, res, next) {
   if (req.session.loggedIn) return next();
   res.redirect('/');
 }
 
-// Middleware: Embed Lock
+// Embed Lock
 function restrictEmbed(req, res, next) {
   const referer = req.get('Referer') || '';
   if (!referer || referer.includes('futbol-x.site') || referer.includes('45.33.127.60')) {
@@ -40,13 +41,12 @@ function restrictEmbed(req, res, next) {
   res.status(403).send('Embedding restricted to futbol-x.site');
 }
 
-// Login page
+// Login
 app.get('/', (req, res) => {
   if (req.session.loggedIn) return res.redirect('/dashboard');
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
 
-// Login POST
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
   if (username === 'admin' && password === 'slamdrix') {
@@ -57,7 +57,6 @@ app.post('/login', (req, res) => {
   }
 });
 
-// Logout
 app.get('/logout', (req, res) => {
   req.session.destroy();
   res.redirect('/');
@@ -68,12 +67,12 @@ app.get('/dashboard', isAuthenticated, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
 });
 
-// Streams page
+// Streams
 app.get('/streams', isAuthenticated, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'streams.html'));
 });
 
-// List active streams
+// List Streams
 app.get('/api/streams', isAuthenticated, (req, res) => {
   db.all(`SELECT id, title FROM streams WHERE active = 1`, (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
@@ -81,17 +80,17 @@ app.get('/api/streams', isAuthenticated, (req, res) => {
   });
 });
 
-// Start stream
+// Start Stream
 app.post('/api/streams', isAuthenticated, (req, res) => {
   const { title, m3u8 } = req.body;
-  const id = Date.now().toString(36);
+  const id = uuidv4().slice(0, 8); // Unique 8-char ID
   db.run(`INSERT INTO streams (id, title, m3u8, active) VALUES (?, ?, ?, 1)`, [id, title, m3u8], (err) => {
     if (err) return res.status(500).json({ error: err.message });
-    res.json({ id, embedUrl: `http://45.33.127.60/embed/${id}` });
+    res.json({ id, embedUrl: `http://45.33.127.60/embed/${id}.php` });
   });
 });
 
-// Stop stream
+// Stop Stream
 app.delete('/api/streams/:id', isAuthenticated, (req, res) => {
   db.run(`UPDATE streams SET active = 0 WHERE id = ?`, [req.params.id], (err) => {
     if (err) return res.status(500).json({ error: err.message });
@@ -99,22 +98,22 @@ app.delete('/api/streams/:id', isAuthenticated, (req, res) => {
   });
 });
 
-// Get stream
+// Get Stream
 app.get('/api/streams/:id', (req, res) => {
   db.get(`SELECT * FROM streams WHERE id = ? AND active = 1`, [req.params.id], (err, row) => {
-    if (err || !row) return res.status(404).json({ error: "Not found" });
+    if (err || !row) return res.status(404).json({ error: "Stream not found or inactive" });
     res.json(row);
   });
 });
 
-// Embed page (public with restrictions)
-app.get('/embed/:id', restrictEmbed, (req, res) => {
+// Embed (PHP-style URL)
+app.get('/embed/:id.php', restrictEmbed, (req, res) => {
   res.set('Access-Control-Allow-Origin', 'https://futbol-x.site');
   res.set('X-Frame-Options', 'ALLOW-FROM https://futbol-x.site');
   res.sendFile(path.join(__dirname, 'public', 'embed.html'));
 });
 
-// CORS Proxy (improved error handling)
+// Proxy
 app.get('/proxy/:streamId', async (req, res) => {
   const stream = await new Promise(r => db.get(`SELECT m3u8 FROM streams WHERE id = ? AND active = 1`, [req.params.streamId], (e, row) => r(row)));
   if (!stream) return res.status(404).send("Stream not found or inactive");
@@ -152,7 +151,7 @@ app.get('/proxy-url', async (req, res) => {
 io.on('connection', (socket) => {
   socket.on('join-stream', (streamId) => {
     socket.join(streamId);
-    db.run(`INSERT INTO viewers (stream_id, socket_id) VALUES (?, ?)`, [streamId, socket.id]);
+    db.run(`INSERT OR REPLACE INTO viewers (stream_id, socket_id) VALUES (?, ?)`, [streamId, socket.id]);
     updateViewers(streamId);
   });
 
