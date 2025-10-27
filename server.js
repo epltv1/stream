@@ -49,10 +49,12 @@ function isAuthenticated(req, res, next) {
   res.redirect('/');
 }
 
-// Embed Lock
+// Embed Lock (Updated for www.futbol-x.site)
 function restrictEmbed(req, res, next) {
   const referer = req.get('Referer') || '';
-  if (!referer || referer.includes('futbol-x.site') || referer.includes('45.33.127.60')) {
+  const allowedDomains = ['futbol-x.site', 'www.futbol-x.site', '45.33.127.60'];
+  const isAllowed = !referer || allowedDomains.some(domain => referer.includes(domain));
+  if (isAllowed) {
     return next();
   }
   res.status(403).send('Embedding restricted to futbol-x.site');
@@ -108,6 +110,7 @@ app.post('/api/streams', isAuthenticated, (req, res) => {
       console.error('Insert Error:', err.message);
       return res.status(500).json({ error: err.message });
     }
+    console.log(`New stream created: ID=${id}, m3u8=${m3u8}`); // Debug log
     res.json({ id, embedUrl: `http://45.33.127.60/embed/${id}.php` });
   });
 });
@@ -121,37 +124,66 @@ app.delete('/api/streams/:id', isAuthenticated, (req, res) => {
   });
 });
 
-// Get Stream
+// Get Stream (Improved logging)
 app.get('/api/streams/:id', (req, res) => {
   if (!db) return res.status(500).json({ error: 'Database not available' });
+  console.log(`Fetching stream ID: ${req.params.id}`); // Debug
   db.get(`SELECT * FROM streams WHERE id = ? AND active = 1`, [req.params.id], (err, row) => {
-    if (err || !row) return res.status(404).json({ error: "Stream not found or inactive" });
+    if (err) {
+      console.error(`DB fetch error for ${req.params.id}:`, err.message);
+      return res.status(500).json({ error: err.message });
+    }
+    if (!row) {
+      console.log(`Stream ${req.params.id} not found or inactive`);
+      return res.status(404).json({ error: "Stream not found or inactive" });
+    }
+    console.log(`Stream fetched: ${row.title}`); // Debug
     res.json(row);
   });
 });
 
-// Embed (PHP-style URL)
+// Embed (PHP-style URL, Updated CORS for www.)
 app.get('/embed/:id.php', restrictEmbed, (req, res) => {
-  res.set('Access-Control-Allow-Origin', 'https://futbol-x.site');
-  res.set('X-Frame-Options', 'ALLOW-FROM https://futbol-x.site');
+  const id = req.params.id;
+  console.log(`Embed request for ID: ${id}`); // Debug
+  res.set('Access-Control-Allow-Origin', 'https://futbol-x.site, https://www.futbol-x.site');
+  res.set('Access-Control-Allow-Origin', '*'); // Fallback for direct
+  res.set('X-Frame-Options', 'ALLOWALL'); // Allow iframes broadly but Referer checks
   res.sendFile(path.join(__dirname, 'public', 'embed.html'));
 });
 
-// Proxy
+// Smart Proxy (Direct if possible, fallback to full proxy)
 app.get('/proxy/:streamId', async (req, res) => {
   if (!db) return res.status(500).send("Database not available");
   const stream = await new Promise(r => db.get(`SELECT m3u8 FROM streams WHERE id = ? AND active = 1`, [req.params.streamId], (e, row) => r(row)));
   if (!stream) return res.status(404).send("Stream not found or inactive");
+  const originalM3u8 = stream.m3u8;
+  console.log(`Proxying m3u8: ${originalM3u8}`); // Debug
   try {
-    const response = await fetch(stream.m3u8, { redirect: 'follow' });
+    // Try direct fetch first (no proxy if CORS allows)
+    const directResponse = await fetch(originalM3u8, { method: 'HEAD', mode: 'cors' });
+    if (directResponse.ok) {
+      console.log('Direct m3u8 accessible, serving directly');
+      const text = await fetch(originalM3u8).then(r => r.text());
+      res.set('Access-Control-Allow-Origin', '*');
+      res.set('Content-Type', 'application/vnd.apple.mpegurl');
+      return res.send(text);
+    }
+  } catch (directErr) {
+    console.log(`Direct failed (likely CORS): ${directErr.message}, falling back to proxy`);
+  }
+  // Full proxy fallback
+  try {
+    const response = await fetch(originalM3u8, { redirect: 'follow' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     let text = await response.text();
+    // Proxy segments only if needed
     text = text.replace(/(https?:\/\/[^\s"']+)/g, (url) => `/proxy-url?url=${encodeURIComponent(url)}`);
     res.set('Access-Control-Allow-Origin', '*');
     res.set('Content-Type', 'application/vnd.apple.mpegurl');
     res.send(text);
   } catch (e) {
-    console.error(`Proxy error for ${stream.m3u8}:`, e.message);
+    console.error(`Proxy error for ${originalM3u8}:`, e.message);
     res.status(500).send("Failed to load stream");
   }
 });
