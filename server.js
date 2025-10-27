@@ -4,6 +4,7 @@ const session = require('express-session');
 const { Server } = require('socket.io');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
+const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const app = express();
 const server = http.createServer(app);
@@ -16,12 +17,28 @@ app.use(session({
   saveUninitialized: true
 }));
 
+// DB Path
+const dbPath = path.join(__dirname, 'streams.db');
+console.log(`DB Path: ${dbPath}`);
+
+// Ensure DB directory is writable
+if (!fs.existsSync(dbPath)) {
+  fs.writeFileSync(dbPath, '');
+  fs.chmodSync(dbPath, 0o666); // Make writable for owner/group
+}
+
 // DB
-const db = new sqlite3.Database('streams.db');
-db.serialize(() => {
-  db.run(`CREATE TABLE IF NOT EXISTS streams (id TEXT PRIMARY KEY, title TEXT, m3u8 TEXT, active INTEGER DEFAULT 1)`);
-  db.run(`CREATE TABLE IF NOT EXISTS viewers (stream_id TEXT, socket_id TEXT, UNIQUE(stream_id, socket_id))`);
-});
+let db;
+try {
+  db = new sqlite3.Database(dbPath);
+  db.serialize(() => {
+    db.run(`CREATE TABLE IF NOT EXISTS streams (id TEXT PRIMARY KEY, title TEXT, m3u8 TEXT, active INTEGER DEFAULT 1)`);
+    db.run(`CREATE TABLE IF NOT EXISTS viewers (stream_id TEXT, socket_id TEXT, UNIQUE(stream_id, socket_id))`);
+  });
+  console.log('DB connected successfully');
+} catch (err) {
+  console.error('DB Connection Error:', err.message);
+}
 
 app.use(express.json());
 app.use(express.static('public'));
@@ -74,6 +91,7 @@ app.get('/streams', isAuthenticated, (req, res) => {
 
 // List Streams
 app.get('/api/streams', isAuthenticated, (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not available' });
   db.all(`SELECT id, title FROM streams WHERE active = 1`, (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json(rows);
@@ -82,16 +100,21 @@ app.get('/api/streams', isAuthenticated, (req, res) => {
 
 // Start Stream
 app.post('/api/streams', isAuthenticated, (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not available' });
   const { title, m3u8 } = req.body;
   const id = uuidv4().slice(0, 8); // Unique 8-char ID
-  db.run(`INSERT INTO streams (id, title, m3u8, active) VALUES (?, ?, ?, 1)`, [id, title, m3u8], (err) => {
-    if (err) return res.status(500).json({ error: err.message });
+  db.run(`INSERT INTO streams (id, title, m3u8, active) VALUES (?, ?, ?, 1)`, [id, title, m3u8], function(err) {
+    if (err) {
+      console.error('Insert Error:', err.message);
+      return res.status(500).json({ error: err.message });
+    }
     res.json({ id, embedUrl: `http://45.33.127.60/embed/${id}.php` });
   });
 });
 
 // Stop Stream
 app.delete('/api/streams/:id', isAuthenticated, (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not available' });
   db.run(`UPDATE streams SET active = 0 WHERE id = ?`, [req.params.id], (err) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json({ success: true });
@@ -100,6 +123,7 @@ app.delete('/api/streams/:id', isAuthenticated, (req, res) => {
 
 // Get Stream
 app.get('/api/streams/:id', (req, res) => {
+  if (!db) return res.status(500).json({ error: 'Database not available' });
   db.get(`SELECT * FROM streams WHERE id = ? AND active = 1`, [req.params.id], (err, row) => {
     if (err || !row) return res.status(404).json({ error: "Stream not found or inactive" });
     res.json(row);
@@ -115,6 +139,7 @@ app.get('/embed/:id.php', restrictEmbed, (req, res) => {
 
 // Proxy
 app.get('/proxy/:streamId', async (req, res) => {
+  if (!db) return res.status(500).send("Database not available");
   const stream = await new Promise(r => db.get(`SELECT m3u8 FROM streams WHERE id = ? AND active = 1`, [req.params.streamId], (e, row) => r(row)));
   if (!stream) return res.status(404).send("Stream not found or inactive");
   try {
@@ -151,12 +176,12 @@ app.get('/proxy-url', async (req, res) => {
 io.on('connection', (socket) => {
   socket.on('join-stream', (streamId) => {
     socket.join(streamId);
-    db.run(`INSERT OR REPLACE INTO viewers (stream_id, socket_id) VALUES (?, ?)`, [streamId, socket.id]);
+    if (db) db.run(`INSERT OR REPLACE INTO viewers (stream_id, socket_id) VALUES (?, ?)`, [streamId, socket.id]);
     updateViewers(streamId);
   });
 
   socket.on('disconnect', () => {
-    db.run(`DELETE FROM viewers WHERE socket_id = ?`, [socket.id], () => {
+    if (db) db.run(`DELETE FROM viewers WHERE socket_id = ?`, [socket.id], () => {
       socket.rooms.forEach(room => {
         if (room !== socket.id) updateViewers(room);
       });
@@ -165,6 +190,7 @@ io.on('connection', (socket) => {
 });
 
 function updateViewers(streamId) {
+  if (!db) return;
   db.get(`SELECT COUNT(*) as count FROM viewers WHERE stream_id = ?`, [streamId], (err, row) => {
     if (!err) io.to(streamId).emit('viewer-count', row.count || 0);
   });
