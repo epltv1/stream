@@ -5,54 +5,32 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
-    body { font-family: 'Segoe UI', Arial, sans-serif; min-height: 100vh; transition: background 0.3s, color 0.3s; }
-    .container { display: flex; }
-    .sidebar { width: 250px; background: #2c3e50; color: white; height: 100vh; position: fixed; top: 0; left: 0; transform: translateX(-250px); transition: transform 0.3s ease; z-index: 1000; }
-    .sidebar.active { transform: translateX(0); }
-    .sidebar h2 { padding: 20px; font-size: 24px; }
-    .sidebar a { display: flex; align-items: center; gap: 10px; padding: 15px 20px; color: white; text-decoration: none; }
-    .sidebar a:hover { background: #34495e; }
-    .content { padding: 20px; width: 100%; }
-    .card { background: #fff; padding: 20px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-width: 400px; margin: 20px auto; }
-    input, button { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 8px; font-size: 16px; }
-    button { background: #007bff; color: white; border: none; cursor: pointer; transition: background 0.3s; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); transition: background 0.3s; }
+    .card { background: rgba(255,255,255,0.95); padding: 40px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); max-width: 400px; width: 90%; text-align: center; backdrop-filter: blur(10px); }
+    h1 { margin-bottom: 30px; color: #333; font-size: 28px; }
+    input { width: 100%; padding: 15px; margin: 10px 0; border: 2px solid #ddd; border-radius: 10px; font-size: 16px; transition: border-color 0.3s; }
+    input:focus { outline: none; border-color: #007bff; }
+    button { width: 100%; padding: 15px; margin: 10px 0; background: #007bff; color: white; border: none; border-radius: 10px; font-size: 16px; cursor: pointer; transition: background 0.3s; }
     button:hover { background: #0056b3; }
-    #error { color: #e11; text-align: center; }
-    .theme-toggle { position: fixed; top: 15px; right: 15px; z-index: 1001; }
-    .theme-toggle button { background: none; color: inherit; font-size: 24px; cursor: pointer; }
-    .menu-toggle { position: fixed; top: 15px; left: 15px; font-size: 24px; background: none; border: none; cursor: pointer; z-index: 1001; }
-    body.light { background: #f4f6f9; color: #333; }
-    body.light .card { background: #fff; }
-    body.dark { background: #121212; color: #ddd; }
-    body.dark .card { background: #1e1e1e; border: 1px solid #333; }
-    body.dark input, body.dark button { border-color: #444; background: #2a2a2a; color: #ddd; }
-    body.dark button { background: #007bff; }
-    @media (max-width: 768px) { .content { padding: 15px; } .card { margin: 60px auto 20px; } }
-    @media (min-width: 1200px) { .card { max-width: 500px; } }
+    #error { color: #e11; text-align: center; margin-top: 10px; }
+    .theme-toggle { position: absolute; top: 20px; right: 20px; }
+    .theme-toggle button { background: rgba(255,255,255,0.9); border: none; border-radius: 50%; width: 50px; height: 50px; font-size: 20px; cursor: pointer; }
+    body.dark { background: linear-gradient(135deg, #121212 0%, #1e1e1e 100%); }
+    body.dark .card { background: rgba(30,30,30,0.95); color: #ddd; }
+    body.dark input { background: #2a2a2a; border-color: #444; color: #ddd; }
+    @media (max-width: 480px) { .card { padding: 30px 20px; } }
   </style>
 </head>
 <body class="light">
-  <button class="menu-toggle" onclick="toggleSidebar()"><i class="fas fa-bars"></i></button>
   <div class="theme-toggle">
     <button onclick="toggleTheme()"><i class="fas fa-moon"></i></button>
   </div>
-  <div class="container">
-    <div class="sidebar">
-      <h2>Stream Manager</h2>
-      <a href="/dashboard"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
-      <a href="/streams"><i class="fas fa-video"></i> Streams</a>
-      <a href="/logout"><i class="fas fa-sign-out-alt"></i> Logout</a>
-      <button class="menu-toggle" onclick="toggleSidebar()" style="position: absolute; top: 15px; right: 15px; color: white;"><i class="fas fa-times"></i></button>
-    </div>
-    <div class="content">
-      <div class="card">
-        <h1>Login</h1>
-        <input type="text" id="username" placeholder="Username">
-        <input type="password" id="password" placeholder="Password">
-        <button onclick="login()">Login</button>
-        <p id="error"></p>
-      </div>
-    </div>
+  <div class="card">
+    <h1>Stream Manager</h1>
+    <input type="text" id="username" placeholder="Username">
+    <input type="password" id="password" placeholder="Password">
+    <button onclick="login()">Login</button>
+    <p id="error"></p>
   </div>
   <script>
     async function login() {
@@ -73,9 +51,6 @@
       const icon = document.querySelector('.theme-toggle i');
       icon.className = document.body.classList.contains('dark') ? 'fas fa-sun' : 'fas fa-moon';
       localStorage.setItem('theme', document.body.classList.contains('dark') ? 'dark' : 'light');
-    }
-    function toggleSidebar() {
-      document.querySelector('.sidebar').classList.toggle('active');
     }
     if (localStorage.getItem('theme') === 'dark') toggleTheme();
   </script>
