@@ -8,9 +8,9 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 
-// Sessions (for login)
+// Sessions
 app.use(session({
-  secret: 'slamdrix-secret-key', // Change this in production!
+  secret: 'slamdrix-secret-key', // CHANGE IN PRODUCTION
   resave: false,
   saveUninitialized: true
 }));
@@ -25,13 +25,22 @@ db.serialize(() => {
 app.use(express.json());
 app.use(express.static('public'));
 
-// Middleware: Check if logged in
+// Middleware: Auth
 function isAuthenticated(req, res, next) {
   if (req.session.loggedIn) return next();
   res.redirect('/');
 }
 
-// Login page (root)
+// Middleware: Embed Lock
+function restrictEmbed(req, res, next) {
+  const referer = req.get('Referer') || '';
+  if (!referer || referer.includes('futbol-x.site') || referer.includes('45.33.127.60')) {
+    return next();
+  }
+  res.status(403).send('Embedding restricted to futbol-x.site');
+}
+
+// Login page
 app.get('/', (req, res) => {
   if (req.session.loggedIn) return res.redirect('/dashboard');
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
@@ -54,17 +63,17 @@ app.get('/logout', (req, res) => {
   res.redirect('/');
 });
 
-// Dashboard (protected)
+// Dashboard
 app.get('/dashboard', isAuthenticated, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
 });
 
-// Streams page (protected)
+// Streams page
 app.get('/streams', isAuthenticated, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'streams.html'));
 });
 
-// List active streams (for streams page)
+// List active streams
 app.get('/api/streams', isAuthenticated, (req, res) => {
   db.all(`SELECT id, title FROM streams WHERE active = 1`, (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
@@ -72,7 +81,7 @@ app.get('/api/streams', isAuthenticated, (req, res) => {
   });
 });
 
-// Start stream (protected)
+// Start stream
 app.post('/api/streams', isAuthenticated, (req, res) => {
   const { title, m3u8 } = req.body;
   const id = Date.now().toString(36);
@@ -90,7 +99,7 @@ app.delete('/api/streams/:id', isAuthenticated, (req, res) => {
   });
 });
 
-// Get stream (for player)
+// Get stream
 app.get('/api/streams/:id', (req, res) => {
   db.get(`SELECT * FROM streams WHERE id = ? AND active = 1`, [req.params.id], (err, row) => {
     if (err || !row) return res.status(404).json({ error: "Not found" });
@@ -98,24 +107,28 @@ app.get('/api/streams/:id', (req, res) => {
   });
 });
 
-// Embed page (public - no auth needed for viewers)
-app.get('/embed/:id', (req, res) => {
+// Embed page (public with restrictions)
+app.get('/embed/:id', restrictEmbed, (req, res) => {
+  res.set('Access-Control-Allow-Origin', 'https://futbol-x.site');
+  res.set('X-Frame-Options', 'ALLOW-FROM https://futbol-x.site');
   res.sendFile(path.join(__dirname, 'public', 'embed.html'));
 });
 
-// CORS Proxy
+// CORS Proxy (improved error handling)
 app.get('/proxy/:streamId', async (req, res) => {
   const stream = await new Promise(r => db.get(`SELECT m3u8 FROM streams WHERE id = ? AND active = 1`, [req.params.streamId], (e, row) => r(row)));
-  if (!stream) return res.status(404).send("Not found");
+  if (!stream) return res.status(404).send("Stream not found or inactive");
   try {
-    const response = await fetch(stream.m3u8);
+    const response = await fetch(stream.m3u8, { redirect: 'follow' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
     let text = await response.text();
     text = text.replace(/(https?:\/\/[^\s"']+)/g, (url) => `/proxy-url?url=${encodeURIComponent(url)}`);
     res.set('Access-Control-Allow-Origin', '*');
     res.set('Content-Type', 'application/vnd.apple.mpegurl');
     res.send(text);
   } catch (e) {
-    res.status(500).send("Proxy failed");
+    console.error(`Proxy error for ${stream.m3u8}:`, e.message);
+    res.status(500).send("Failed to load stream");
   }
 });
 
@@ -123,17 +136,19 @@ app.get('/proxy-url', async (req, res) => {
   const { url } = req.query;
   if (!url) return res.status(400).send("Missing URL");
   try {
-    const response = await fetch(decodeURIComponent(url));
+    const response = await fetch(decodeURIComponent(url), { redirect: 'follow' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const buffer = await response.arrayBuffer();
     res.set('Access-Control-Allow-Origin', '*');
     res.set('Content-Type', response.headers.get('content-type') || 'application/octet-stream');
     res.send(Buffer.from(buffer));
   } catch (e) {
-    res.status(500).send("Failed to proxy");
+    console.error(`Proxy-url error for ${url}:`, e.message);
+    res.status(500).send("Failed to load segment");
   }
 });
 
-// Socket.IO for viewers
+// Socket.IO
 io.on('connection', (socket) => {
   socket.on('join-stream', (streamId) => {
     socket.join(streamId);
@@ -156,5 +171,4 @@ function updateViewers(streamId) {
   });
 }
 
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Server on :${PORT}`));
+server.listen(3000, () => console.log('Server on :3000'));
