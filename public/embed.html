@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    .player { position: relative; width: 100%; height: 100vh; background: #000; }
+    video { width: 100%; height: 100%; object-fit: contain; }
+    .live { position: absolute; top: 15px; left: 15px; background: #e11; color: white; padding: 5px 10px; border-radius: 4px; font: bold 13px sans-serif; }
+    .viewers { position: absolute; top: 15px; right: 15px; background: rgba(0,0,0,0.7); color: white; padding: 5px 10px; border-radius: 4px; font: 13px sans-serif; }
+    .controls { position: absolute; bottom: 15px; right: 15px; display: flex; gap: 8px; z-index: 10; }
+    button, select { background: rgba(0,0,0,0.6); color: white; border: none; padding: 8px 12px; border-radius: 4px; font-size: 13px; cursor: pointer; }
+    select { min-width: 80px; }
+  </style>
+</head>
+<body>
+  <div class="player">
+    <video id="video" playsinline></video>
+    <div class="live">LIVE</div>
+    <div class="viewers" id="viewers">0 viewers</div>
+    <div class="controls">
+      <button id="pip">PiP</button>
+      <select id="quality"><option>Auto</option></select>
+      <button id="fs">Full</button>
+    </div>
+  </div>
+
+  <script>
+    const streamId = window.location.pathname.split('/').pop();
+    const socket = io();
+    let hls;
+
+    fetch(`/api/streams/${streamId}`).then(r => r.json()).then(stream => {
+      document.title = stream.title + " - Live";
+
+      if (Hls.isSupported()) {
+        hls = new Hls({ enableWorker: true });
+        hls.loadSource(`/proxy/${streamId}`);
+        hls.attachMedia(document.getElementById('video'));
+
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          const levels = hls.levels;
+          const sel = document.getElementById('quality');
+          levels.forEach((l, i) => {
+            const opt = document.createElement('option');
+            opt.value = i; opt.text = l.height + 'p';
+            sel.appendChild(opt);
+          });
+          sel.onchange = () => hls.currentLevel = sel.value === 'Auto' ? -1 : +sel.value;
+        });
+      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = `/proxy/${streamId}`;
+      }
+    }).catch(() => document.body.innerHTML = '<h1>Stream not found or inactive</h1>');
+
+    document.getElementById('pip').onclick = () => {
+      const v = document.getElementById('video');
+      document.pictureInPictureElement ? document.exitPictureInPicture() : v.requestPictureInPicture();
+    };
+
+    document.getElementById('fs').onclick = () => {
+      document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+    };
+
+    socket.emit('join-stream', streamId);
+    socket.on('viewer-count', c => {
+      document.getElementById('viewers').textContent = c + ` viewer${c !== 1 ? 's' : ''}`;
+    });
+  </script>
+</body>
+</html>
