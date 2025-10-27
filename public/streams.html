@@ -6,38 +6,44 @@
   <script src="/socket.io/socket.io.js"></script>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
-    body { font-family: Arial, sans-serif; min-height: 100vh; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; min-height: 100vh; transition: background 0.3s, color 0.3s; }
     .container { display: flex; }
-    .sidebar { width: 250px; background: #1a1a1a; color: white; height: 100vh; position: fixed; transition: transform 0.3s; }
-    .sidebar a { display: block; padding: 15px; color: white; text-decoration: none; }
-    .sidebar a:hover { background: #333; }
-    .content { margin-left: 250px; padding: 20px; width: 100%; }
-    .card { background: #fff; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-width: 600px; margin: auto; }
+    .sidebar { width: 250px; background: #2c3e50; color: white; height: 100vh; position: fixed; top: 0; left: 0; transform: translateX(-250px); transition: transform 0.3s ease; z-index: 1000; }
+    .sidebar.active { transform: translateX(0); }
+    .sidebar h2 { padding: 20px; font-size: 24px; }
+    .sidebar a { display: flex; align-items: center; gap: 10px; padding: 15px 20px; color: white; text-decoration: none; }
+    .sidebar a:hover { background: #34495e; }
+    .content { padding: 20px; width: 100%; }
+    .card { background: #fff; padding: 20px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-width: 600px; margin: 20px auto; }
     ul { list-style: none; padding: 0; }
     li { background: #e6f0ff; padding: 15px; margin: 10px 0; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; }
-    button { background: #ff3333; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; }
+    button { background: #dc3545; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; transition: background 0.3s; }
+    button:hover { background: #c82333; }
     .viewers { font-size: 14px; color: #666; }
-    .theme-toggle { position: fixed; top: 10px; right: 10px; }
-    .theme-toggle button { background: none; color: inherit; font-size: 20px; }
-    body.light { background: #f4f6f9; }
+    .theme-toggle { position: fixed; top: 15px; right: 15px; z-index: 1001; }
+    .theme-toggle button { background: none; color: inherit; font-size: 24px; cursor: pointer; }
+    .menu-toggle { position: fixed; top: 15px; left: 15px; font-size: 24px; background: none; border: none; cursor: pointer; z-index: 1001; }
+    body.light { background: #f4f6f9; color: #333; }
     body.light .card { background: #fff; }
-    body.light .sidebar { background: #2c3e50; }
-    body.dark { background: #121212; color: #fff; }
-    body.dark .card { background: #1e1e1e; }
-    body.dark .sidebar { background: #111; }
-    @media (max-width: 768px) { .sidebar { transform: translateX(-250px); } .content { margin-left: 0; } }
+    body.dark { background: #121212; color: #ddd; }
+    body.dark .card { background: #1e1e1e; border: 1px solid #333; }
+    body.dark li { background: #2a2a2a; }
+    @media (max-width: 768px) { .content { padding: 15px; } .card { margin: 60px auto 20px; } }
+    @media (min-width: 1200px) { .card { max-width: 700px; } }
   </style>
 </head>
 <body class="light">
+  <button class="menu-toggle" onclick="toggleSidebar()"><i class="fas fa-bars"></i></button>
   <div class="theme-toggle">
     <button onclick="toggleTheme()"><i class="fas fa-moon"></i></button>
   </div>
   <div class="container">
     <div class="sidebar">
-      <h2 style="padding: 15px;">Stream Manager</h2>
+      <h2>Stream Manager</h2>
       <a href="/dashboard"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
       <a href="/streams"><i class="fas fa-video"></i> Streams</a>
       <a href="/logout"><i class="fas fa-sign-out-alt"></i> Logout</a>
+      <button class="menu-toggle" onclick="toggleSidebar()" style="position: absolute; top: 15px; right: 15px; color: white;"><i class="fas fa-times"></i></button>
     </div>
     <div class="content">
       <div class="card">
@@ -66,7 +72,8 @@
         list.appendChild(li);
         socket.emit('join-stream', stream.id);
         socket.on('viewer-count', count => {
-          document.getElementById(`viewers-${stream.id}`).textContent = `${count} viewers`;
+          const el = document.getElementById(`viewers-${stream.id}`);
+          if (el) el.textContent = `${count} viewer${count !== 1 ? 's' : ''}`;
         });
       });
     }
@@ -82,6 +89,9 @@
       const icon = document.querySelector('.theme-toggle i');
       icon.className = document.body.classList.contains('dark') ? 'fas fa-sun' : 'fas fa-moon';
       localStorage.setItem('theme', document.body.classList.contains('dark') ? 'dark' : 'light');
+    }
+    function toggleSidebar() {
+      document.querySelector('.sidebar').classList.toggle('active');
     }
     if (localStorage.getItem('theme') === 'dark') toggleTheme();
     loadStreams();
