@@ -77,7 +77,7 @@
       if (res.status === 401) return window.location.href = '/';
       const data = await res.json();
       if (data.embedUrl) {
-        const embed = `<iframe src="${data.embedUrl}" width="800" height="450" frameborder="0" allowfullscreen></iframe>`;
+        const embed = `<iframe src="${data.embedUrl}" width="800" height="450" frameborder="0" allowfullscreen></iframe>`; // Removed .php
         document.getElementById('embedCode').value = embed;
         document.getElementById('result').style.display = 'block';
       } else {
