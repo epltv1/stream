@@ -27,7 +27,7 @@
 
   <script>
     const fullPath = window.location.pathname;
-    const streamId = fullPath.match(/embed\/([a-z0-9]+)\.php/)[1]; // Improved ID extraction
+    const streamId = fullPath.match(/embed\/([a-z0-9]+)/)[1]; // Updated for no .php
     console.log(`Parsed stream ID: ${streamId}`); // Debug
     const socket = io();
 
