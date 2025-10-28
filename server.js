@@ -49,7 +49,7 @@ function isAuthenticated(req, res, next) {
   res.redirect('/');
 }
 
-// Embed Lock (Updated for www.futbol-x.site)
+// Embed Lock (Updated for www.futbol-x.site, no .php)
 function restrictEmbed(req, res, next) {
   const referer = req.get('Referer') || '';
   const allowedDomains = ['futbol-x.site', 'www.futbol-x.site', '45.33.127.60'];
@@ -111,7 +111,7 @@ app.post('/api/streams', isAuthenticated, (req, res) => {
       return res.status(500).json({ error: err.message });
     }
     console.log(`New stream created: ID=${id}, m3u8=${m3u8}`); // Debug log
-    res.json({ id, embedUrl: `http://45.33.127.60/embed/${id}.php` });
+    res.json({ id, embedUrl: `http://45.33.127.60/embed/${id}` }); // Removed .php
   });
 });
 
@@ -142,8 +142,8 @@ app.get('/api/streams/:id', (req, res) => {
   });
 });
 
-// Embed (PHP-style URL, Updated CORS for www.)
-app.get('/embed/:id.php', restrictEmbed, (req, res) => {
+// Embed (No .php, Updated CORS)
+app.get('/embed/:id', restrictEmbed, (req, res) => {
   const id = req.params.id;
   console.log(`Embed request for ID: ${id}`); // Debug
   res.set('Access-Control-Allow-Origin', 'https://futbol-x.site, https://www.futbol-x.site');
